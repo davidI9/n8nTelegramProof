@@ -7,10 +7,29 @@ services:
       - "5678:5678"
     environment:
       - NODE_ENV=production
-      - WEBHOOK_URL=http://localhost:5678/ # Cambia esto por tu dominio si lo expones a internet (ej. https://n8n.tudominio.com)
-      - GENERIC_TIMEZONE=Europe/Madrid # Ajusta a tu zona horaria
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=Europe/Madrid
     volumes:
       - n8n_data:/home/node/.n8n
+    networks:
+      - backend_net
+
+  telegram-bot:
+    build: .
+    container_name: telegram-bot
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - n8n
+    networks:
+      - backend_net
+
+networks:
+  backend_net:
+    driver: bridge
 
 volumes:
   n8n_data:
