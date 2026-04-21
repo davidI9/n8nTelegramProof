@@ -1,0 +1,16 @@
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - NODE_ENV=production
+      - WEBHOOK_URL=http://localhost:5678/ # Cambia esto por tu dominio si lo expones a internet (ej. https://n8n.tudominio.com)
+      - GENERIC_TIMEZONE=Europe/Madrid # Ajusta a tu zona horaria
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
