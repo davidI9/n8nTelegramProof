@@ -24,7 +24,7 @@ class CreateProjectRepository:
             )
             
             print(f"Proyecto generado con éxito:\n{result.stdout}")
-            return True
+            return f"/src/shared/actividades-{event_date.split()[0]}-{first_line.replace(' ', '-')}-{second_line.replace(' ', '-')}"
             
         except subprocess.CalledProcessError as e:
             print(f"El script falló con el código {e.returncode}.")

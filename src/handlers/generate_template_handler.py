@@ -6,7 +6,7 @@ class GenerateTemplateHandler:
         self.repository = repository
 
     def handle(self, dto: GenerateTemplateDTO):
-        self.repository.create_project(
+        return self.repository.create_project(
             script_path=dto.script_path,
             activity_type=dto.activity_type,
             speakers=dto.speakers,

@@ -1,6 +1,8 @@
 from telegram import Update
 from ..repositories.pillow_repository import PillowRepository
-from handlers.generate_posts_handler import GeneratePostsHandler
+from ..repositories.create_project_repository import CreateProjectRepository
+from ..handlers.generate_template_handler import GenerateTemplateHandler
+from ..handlers.generate_posts_handler import GeneratePostsHandler
 from ..dtos.generate_template_dto import GenerateTemplateDTO
 from telegram.ext import (
     CommandHandler, 
@@ -47,11 +49,13 @@ async def get_second_line(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dto: GenerateTemplateDTO = context.user_data['template_dto']
-    
-    
+    repository = CreateProjectRepository()
+    handler = GenerateTemplateHandler(repository)
     
     try:
         dto.event_date = update.message.text
+        template_path = handler.handle(dto)
+        
         await update.message.reply_text(
             "¡Excelente! Ahora envíame el logo del evento como una foto."
         )
