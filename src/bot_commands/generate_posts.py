@@ -1,3 +1,6 @@
+from datetime import datetime
+from pathlib import Path
+
 from telegram import Update
 from repositories.pillow_repository import PillowRepository
 from repositories.create_project_repository import CreateProjectRepository
@@ -22,7 +25,7 @@ async def crear_cartel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "¡Perfecto! Vamos a preparar los carteles. 🖼️\n\nLa descripción de los carteles tienen 2 líneas, enviame la primera de ellas porfavor."
     )
     context.user_data['template_dto'] = GenerateTemplateDTO(
-        script_path="~/Codigos/n8nTelegramProof/src/shared/create-project.sh",
+        script_path=str(Path(__file__).resolve().parents[1] / "shared" / "create-project.sh"),
         activity_type=1,
         speakers=0,
         first_line="",
@@ -50,22 +53,25 @@ async def get_second_line(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dto: GenerateTemplateDTO = context.user_data['template_dto']
-    repository = CreateProjectRepository()
-    handler = GenerateTemplateHandler(repository)
+    event_date = update.message.text
     
     try:
-        template_path = handler.handle(dto)
-        dto.event_date = update.message.text
-        
-        await update.message.reply_text(
-            "¡Excelente! Ahora envíame el logo del evento como una foto."
-        )
-        return ESPERANDO_LOGO
+        datetime.strptime(event_date, "%Y%m%d %H%M")
     except ValueError:
         await update.message.reply_text(
             "Formato de fecha incorrecto. Por favor, envíala en formato YYYYMMDD HHMM."
         )
-        return ESPERANDO_LOGO
+        return ESPERANDO_DATE
+
+    dto.event_date = event_date
+    repository = CreateProjectRepository()
+    handler = GenerateTemplateHandler(repository)
+    template_path = handler.handle(dto)
+    
+    await update.message.reply_text(
+        "¡Excelente! Ahora envíame el logo del evento como una foto."
+    )
+    return ESPERANDO_LOGO
 
 async def recibir_logo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     repository = PillowRepository()
