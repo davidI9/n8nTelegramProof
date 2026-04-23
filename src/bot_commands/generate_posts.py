@@ -1,9 +1,9 @@
 from telegram import Update
-from ..repositories.pillow_repository import PillowRepository
-from ..repositories.create_project_repository import CreateProjectRepository
-from ..handlers.generate_template_handler import GenerateTemplateHandler
-from ..handlers.generate_posts_handler import GeneratePostsHandler
-from ..dtos.generate_template_dto import GenerateTemplateDTO
+from repositories.pillow_repository import PillowRepository
+from repositories.create_project_repository import CreateProjectRepository
+from handlers.generate_template_handler import GenerateTemplateHandler
+from handlers.generate_posts_handler import GeneratePostsHandler
+from dtos.generate_template_dto import GenerateTemplateDTO
 from telegram.ext import (
     CommandHandler, 
     MessageHandler, 
@@ -22,7 +22,7 @@ async def crear_cartel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "¡Perfecto! Vamos a preparar los carteles. 🖼️\n\nLa descripción de los carteles tienen 2 líneas, enviame la primera de ellas porfavor."
     )
     context.user_data['template_dto'] = GenerateTemplateDTO(
-        script_path="/src/shared/create-project.sh",
+        script_path="~/Codigos/n8nTelegramProof/src/shared/create-project.sh",
         activity_type=1,
         speakers=0,
         first_line="",
@@ -37,6 +37,7 @@ async def get_first_line(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "¡Genial! Ahora envíame la segunda línea de la descripción."
     )
+    
     return ESPERANDO_SECOND_LINE
 
 async def get_second_line(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -53,8 +54,8 @@ async def get_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     handler = GenerateTemplateHandler(repository)
     
     try:
-        dto.event_date = update.message.text
         template_path = handler.handle(dto)
+        dto.event_date = update.message.text
         
         await update.message.reply_text(
             "¡Excelente! Ahora envíame el logo del evento como una foto."
@@ -91,7 +92,10 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 post_handler = ConversationHandler(
     entry_points=[CommandHandler("crear_cartel", crear_cartel)],
     states={
-        ESPERANDO_LOGO: [MessageHandler(filters.PHOTO, recibir_logo)]
+        ESPERANDO_LOGO: [MessageHandler(filters.PHOTO, recibir_logo)],
+        ESPERANDO_FIRST_LINE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_first_line)],
+        ESPERANDO_SECOND_LINE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_second_line)],
+        ESPERANDO_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_date)]
     },
     fallbacks=[CommandHandler("cancelar", cancelar)]
 )

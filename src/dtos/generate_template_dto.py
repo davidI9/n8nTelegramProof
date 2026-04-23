@@ -1,7 +1,6 @@
 from dataclasses import dataclass
-from datetime import date 
 
-@dataclass(frozen=True)
+@dataclass
 class GenerateTemplateDTO:
     script_path: str
     activity_type: int

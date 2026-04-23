@@ -1,5 +1,5 @@
-from ..dtos.generate_template_dto import GenerateTemplateDTO
-from ..repositories.create_project_repository import CreateProjectRepository
+from dtos.generate_template_dto import GenerateTemplateDTO
+from repositories.create_project_repository import CreateProjectRepository
 
 class GenerateTemplateHandler:
     def __init__(self, repository: CreateProjectRepository):
