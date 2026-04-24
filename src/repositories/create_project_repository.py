@@ -1,5 +1,7 @@
 import subprocess
 import os
+import re
+from pathlib import Path
 
 class CreateProjectRepository:
     def create_project(self, script_path: str, activity_type: int, speakers: int, first_line: str, second_line: str, event_date: str):
@@ -10,12 +12,13 @@ class CreateProjectRepository:
         # 2. IMPORTANTE: Tu script de bash usa rutas relativas como "plantillas/...".
         # Si ejecutas el script desde otro lugar, fallará al no encontrar esa carpeta.
         # Por seguridad, extraemos el directorio donde vive el script para ejecutarlo desde allí.
-        script_dir = os.path.dirname(script_path) or '.'
+        script_path_resolved = os.path.abspath(os.path.expanduser(script_path))
+        script_dir = os.path.dirname(script_path_resolved) or '.'
 
         try:
             # 3. Ejecutamos el script inyectando los datos por stdin
             result = subprocess.run(
-                ["bash", script_path],  # Comando a ejecutar
+                ["bash", script_path_resolved],  # Comando a ejecutar
                 input=input_data,       # Pasamos el string con todas las respuestas
                 text=True,              # Para que input y stdout sean strings, no bytes
                 capture_output=True,    # Capturamos lo que imprime el script
@@ -24,7 +27,15 @@ class CreateProjectRepository:
             )
             
             print(f"Proyecto generado con éxito:\n{result.stdout}")
-            return f"/src/shared/actividades-{event_date.split()[0]}-{first_line.replace(' ', '-')}-{second_line.replace(' ', '-')}"
+
+            # El script imprime: "Proyecto <dirname> creado"
+            match = re.search(r"Proyecto\s+([^\s]+)\s+creado", result.stdout)
+            if match:
+                template_dirname = match.group(1)
+                template_svg_path = Path(script_dir) / template_dirname / f"{template_dirname}.svg"
+                return str(template_svg_path.resolve())
+
+            raise RuntimeError("No se pudo determinar el directorio de plantilla generado por el script.")
             
         except subprocess.CalledProcessError as e:
             print(f"El script falló con el código {e.returncode}.")
@@ -32,5 +43,8 @@ class CreateProjectRepository:
             print(f"Error estándar:\n{e.stderr}")
             return False
         except FileNotFoundError:
-            print(f"No se encontró el script en la ruta: {script_path}")
+            print(f"No se encontró el script en la ruta: {script_path_resolved}")
+            return False
+        except RuntimeError as e:
+            print(str(e))
             return False

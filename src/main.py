@@ -17,7 +17,7 @@ def main():
     # from comandos.ayuda import ayuda_handler
     # app.add_handler(ayuda_handler)
 
-    print("🤖 Bot iniciado. Escribe /nuevo_cartel en Telegram...")
+    print("🤖 Bot iniciado. Escribe /crear_cartel en Telegram...")
     app.run_polling()
 
 if __name__ == '__main__':

@@ -2,7 +2,7 @@ from datetime import datetime
 from pathlib import Path
 
 from telegram import Update
-from repositories.pillow_repository import PillowRepository
+from repositories.template_repository import TemplateRepository
 from repositories.create_project_repository import CreateProjectRepository
 from handlers.generate_template_handler import GenerateTemplateHandler
 from handlers.generate_posts_handler import GeneratePostsHandler
@@ -66,7 +66,7 @@ async def get_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dto.event_date = event_date
     repository = CreateProjectRepository()
     handler = GenerateTemplateHandler(repository)
-    template_path = handler.handle(dto)
+    context.user_data['template_path'] = handler.handle(dto)
     
     await update.message.reply_text(
         "¡Excelente! Ahora envíame el logo del evento como una foto."
@@ -74,20 +74,27 @@ async def get_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ESPERANDO_LOGO
 
 async def recibir_logo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    repository = PillowRepository()
+    repository = TemplateRepository()
     handler = GeneratePostsHandler(repository)
     
     foto_id = update.message.photo[-1].file_id
-    archivo = await context.bot.get_file(foto_id)
+    file = await context.bot.get_file(foto_id)
     
-    file_path = "shared/temporal_logo.jpg"
-    await archivo.download_to_drive(file_path)
+    file_path = str(Path(__file__).resolve().parents[1] / "shared" / "temporal_logo.jpg")
+    template_path = context.user_data['template_path']
+    await file.download_to_drive(file_path)
+
+    if not template_path or not Path(template_path).is_file():
+        await update.message.reply_text(
+            "No se encontró la plantilla generada para sobrescribir el SVG."
+        )
+        return ConversationHandler.END
     
     await update.message.reply_text(
-        f"¡Logo recibido y descargado como '{file_path}'! ✅\n\n(Procesando con Pillow...)"
+        f"¡Logo recibido y descargado! ✅\n\n(Procesando la plantilla...)"
     )
     
-    handler.handle(file_path)
+    handler.handle(file_path, template_path)
     
     return ConversationHandler.END
 
