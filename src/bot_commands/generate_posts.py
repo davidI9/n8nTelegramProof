@@ -3,6 +3,7 @@ from pathlib import Path
 
 from telegram import Update
 from repositories.template_repository import TemplateRepository
+from repositories.generate_assets_repository import GenerateAssetsRepository
 from repositories.create_project_repository import CreateProjectRepository
 from handlers.generate_template_handler import GenerateTemplateHandler
 from handlers.generate_posts_handler import GeneratePostsHandler
@@ -66,7 +67,16 @@ async def get_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dto.event_date = event_date
     repository = CreateProjectRepository()
     handler = GenerateTemplateHandler(repository)
-    context.user_data['template_path'] = handler.handle(dto)
+    generated_paths = handler.handle(dto)
+
+    if not generated_paths:
+        await update.message.reply_text(
+            "No se pudo generar la plantilla base. Revisa logs y vuelve a intentarlo."
+        )
+        return ConversationHandler.END
+
+    context.user_data['template_path'] = generated_paths.get('template_path')
+    context.user_data['generate_script_path'] = generated_paths.get('generate_script_path')
     
     await update.message.reply_text(
         "¡Excelente! Ahora envíame el logo del evento como una foto."
@@ -74,14 +84,16 @@ async def get_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ESPERANDO_LOGO
 
 async def recibir_logo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    repository = TemplateRepository()
-    handler = GeneratePostsHandler(repository)
+    template_repository = TemplateRepository()
+    assets_repository = GenerateAssetsRepository()
+    handler = GeneratePostsHandler(template_repository, assets_repository)
     
     foto_id = update.message.photo[-1].file_id
     file = await context.bot.get_file(foto_id)
     
     file_path = str(Path(__file__).resolve().parents[1] / "shared" / "temporal_logo.jpg")
     template_path = context.user_data['template_path']
+    generate_script_path = context.user_data['generate_script_path']
     await file.download_to_drive(file_path)
 
     if not template_path or not Path(template_path).is_file():
@@ -89,12 +101,25 @@ async def recibir_logo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "No se encontró la plantilla generada para sobrescribir el SVG."
         )
         return ConversationHandler.END
+
+    if not generate_script_path or not Path(generate_script_path).is_file():
+        await update.message.reply_text(
+            "No se encontró el script generate.sh en la carpeta de la actividad."
+        )
+        return ConversationHandler.END
     
     await update.message.reply_text(
         f"¡Logo recibido y descargado! ✅\n\n(Procesando la plantilla...)"
     )
     
-    handler.handle(file_path, template_path)
+    ok = handler.handle(file_path, template_path, generate_script_path)
+
+    if ok:
+        await update.message.reply_text("¡Listo! Se actualizó el SVG y se ejecutó generate.sh ✅")
+    else:
+        await update.message.reply_text(
+            "El SVG se actualizó, pero falló la ejecución de generate.sh. Revisa logs."
+        )
     
     return ConversationHandler.END
 

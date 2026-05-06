@@ -20,10 +20,12 @@ def incrustar_logo_en_svg(ruta_svg_base: str, ruta_logo_png: str, ruta_salida: s
     - ruta_logo_png: Ruta de la imagen del logo descargada desde Telegram.
     - ruta_salida: Ruta donde se guardará el SVG final.
 
-    Reglas aplicadas:
-    - Si el logo no está en 600x600 (lado mayor), se reescala para que su lado mayor sea 600 px.
-    - El logo se inserta en un bloque <defs> con id="logo_actividad".
-    - Se clona el logo con 4 etiquetas <use> en posiciones fijas.
+    Implementación:
+    - Calcula el escalado del viewBox y las posiciones base del diseño.
+    - Para cada grupo objetivo (`twitter`, `story`, `post`, `youtube`) busca el <g>
+      correspondiente y toma su atributo `transform` (si existe).
+    - Convierte las coordenadas globales a locales aplicando la inversa del `transform`
+      del propio grupo y genera una etiqueta `<image>` insertada justo antes de `</g>`.
     """
     svg_path = Path(ruta_svg_base)
     logo_path = Path(ruta_logo_png)
@@ -46,31 +48,146 @@ def incrustar_logo_en_svg(ruta_svg_base: str, ruta_logo_png: str, ruta_salida: s
     scale_x = viewbox_width / SVG_BASE_WIDTH
     scale_y = viewbox_height / SVG_BASE_HEIGHT
 
+    # sólo marcadores para idempotencia; no crear grupo fallback que pueda generar artefactos
     bloque_logo = (
         "\n"
         f"    {LOGO_BLOCK_START}\n"
-        "    <defs>\n"
-        f"        <image id=\"logo_actividad\" xlink:href=\"data:image/png;base64,{logo_base64}\" width=\"650\" height=\"650\" />\n"
-        "    </defs>\n"
-        f"    <g id=\"logos_actividad\" transform=\"scale({scale_x:.12f} {scale_y:.12f})\">\n"
-        "        <use xlink:href=\"#logo_actividad\" x=\"596\" y=\"677\" />\n"
-        "        <use xlink:href=\"#logo_actividad\" x=\"598\" y=\"2652\" />\n"
-        "        <use xlink:href=\"#logo_actividad\" x=\"3003\" y=\"699\" />\n"
-        "        <use xlink:href=\"#logo_actividad\" x=\"2877\" y=\"2282\" />\n"
-        "    </g>\n"
         f"    {LOGO_BLOCK_END}\n"
     )
 
+    # eliminar bloque previo completo si existe
     if LOGO_BLOCK_START in contenido_svg and LOGO_BLOCK_END in contenido_svg:
         patron_bloque = re.compile(
-            rf"{re.escape(LOGO_BLOCK_START)}.*?{re.escape(LOGO_BLOCK_END)}\\s*",
+            rf"{re.escape(LOGO_BLOCK_START)}.*?{re.escape(LOGO_BLOCK_END)}\s*",
             flags=re.DOTALL,
         )
         contenido_svg = re.sub(patron_bloque, "", contenido_svg)
 
+    # eliminar imágenes embebidas previas (data URIs) para evitar duplicados en los grupos
+    contenido_svg = re.sub(r'<image[^>]+xlink:href\s*=\s*"data:image/png;base64,[^\"]+"[^>]*>', '', contenido_svg, flags=re.IGNORECASE)
+
     if "</svg>" not in contenido_svg:
         raise ValueError("El archivo SVG base no contiene la etiqueta de cierre </svg>.")
 
+    # mapeo base (coordenadas en diseño base 4316x4301)
+    placements = {
+        "twitter": (3003, 699),
+        "story": (598, 2652),
+        "post": (596, 677),
+        "youtube": (2877, 2282),
+    }
+
+    base_img_size = 650.0
+
+    def parse_transform(s: str):
+        if not s:
+            return [[1,0,0],[0,1,0],[0,0,1]]
+        s = s.strip()
+        m = [[1,0,0],[0,1,0],[0,0,1]]
+        for part in re.finditer(r'([a-zA-Z]+)\s*\(([^)]+)\)', s):
+            name = part.group(1)
+            args = [float(x) for x in re.split(r'[ ,]+', part.group(2).strip()) if x!='']
+            if name == 'translate':
+                tx = args[0]
+                ty = args[1] if len(args)>1 else 0.0
+                mat = [[1,0,tx],[0,1,ty],[0,0,1]]
+            elif name == 'scale':
+                sx = args[0]
+                sy = args[1] if len(args)>1 else sx
+                mat = [[sx,0,0],[0,sy,0],[0,0,1]]
+            elif name == 'matrix':
+                a,b,c,d,e,f = args[:6]
+                mat = [[a,c,e],[b,d,f],[0,0,1]]
+            else:
+                mat = [[1,0,0],[0,1,0],[0,0,1]]
+            # multiply m @ mat
+            m = [
+                [m[0][0]*mat[0][0] + m[0][1]*mat[1][0] + m[0][2]*mat[2][0],
+                 m[0][0]*mat[0][1] + m[0][1]*mat[1][1] + m[0][2]*mat[2][1],
+                 m[0][0]*mat[0][2] + m[0][1]*mat[1][2] + m[0][2]*mat[2][2]],
+                [m[1][0]*mat[0][0] + m[1][1]*mat[1][0] + m[1][2]*mat[2][0],
+                 m[1][0]*mat[0][1] + m[1][1]*mat[1][1] + m[1][2]*mat[2][1],
+                 m[1][0]*mat[0][2] + m[1][1]*mat[1][2] + m[1][2]*mat[2][2]],
+                [0,0,1]
+            ]
+        return m
+
+    def mat_inv(m):
+        a,b,c = m[0]
+        d,e,f = m[1]
+        det = a*e - b*d
+        if abs(det) < 1e-9:
+            return [[1,0,0],[0,1,0],[0,0,1]]
+        inv = [[e/det, -b/det, (b*f - c*e)/det],[ -d/det, a/det, (c*d - a*f)/det],[0,0,1]]
+        return inv
+
+    def apply_mat(m, x, y):
+        nx = m[0][0]*x + m[0][1]*y + m[0][2]
+        ny = m[1][0]*x + m[1][1]*y + m[1][2]
+        return nx, ny
+
+    def encontrar_bloque_grupo(nombre: str):
+        patron_apertura = re.compile(
+            rf'<g\b[^>]*(?:id\s*=\s*"layer-{re.escape(nombre)}"|inkscape:label\s*=\s*"[^"]*{re.escape(nombre)}[^"]*")[^>]*>',
+            flags=re.IGNORECASE,
+        )
+        apertura = patron_apertura.search(contenido_svg)
+        if not apertura:
+            return None
+
+        patron_tag = re.compile(r'</?g\b[^>]*>', flags=re.IGNORECASE)
+        depth = 1
+        pos = apertura.end()
+
+        while True:
+            tag = patron_tag.search(contenido_svg, pos)
+            if not tag:
+                return None
+
+            token = tag.group(0)
+            if token.startswith('</'):
+                depth -= 1
+            else:
+                # evitar contar grupos autocerrados como apertura adicional
+                if not token.rstrip().endswith('/>'):
+                    depth += 1
+
+            if depth == 0:
+                return apertura, tag
+
+            pos = tag.end()
+
+    # insertar por regex calculando coords locales usando sólo el transform del <g>
+    for name, (bx, by) in placements.items():
+        x_global = bx * scale_x
+        y_global = by * scale_y
+        w_global = base_img_size * scale_x
+        h_global = base_img_size * scale_y
+
+        bloque = encontrar_bloque_grupo(name)
+        if not bloque:
+            continue
+
+        apertura, cierre = bloque
+        start_tag = apertura.group(0)
+        t_m = re.search(r'transform\s*=\s*"([^"]+)"', start_tag)
+        t = t_m.group(1) if t_m else ''
+        Mt = parse_transform(t)
+        Minv = mat_inv(Mt)
+        lx, ly = apply_mat(Minv, x_global, y_global)
+        rx, ry = apply_mat(Minv, x_global + w_global, y_global + h_global)
+        lw = abs(rx - lx)
+        lh = abs(ry - ly)
+
+        image_tag = (
+            f'<image xlink:href="data:image/png;base64,{logo_base64}" '
+            f'x="{lx:.6f}" y="{ly:.6f}" width="{lw:.6f}" height="{lh:.6f}" '
+            'preserveAspectRatio="xMidYMid meet" />'
+        )
+
+        contenido_svg = f"{contenido_svg[:cierre.start()]}{image_tag}{contenido_svg[cierre.start():]}"
+
+    # finalmente añadimos el bloque defs y el grupo fallback al final del SVG
     contenido_final = contenido_svg.rsplit("</svg>", 1)
     contenido_svg_generado = f"{contenido_final[0]}{bloque_logo}</svg>{contenido_final[1]}"
 
